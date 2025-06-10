@@ -1,0 +1,241 @@
+
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>🎉 테미와 가위바위보 챌린지!</title>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.min.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(to bottom, #d0eaff, #ffffff);
+      text-align: center;
+      padding: 20px;
+    }
+    h1 {
+      color: #004080;
+      font-size: 2.5em;
+      margin-bottom: 10px;
+    }
+    #start-button, #retry-button {
+      padding: 20px 40px;
+      font-size: 1.8em;
+      border: none;
+      background-color: #ff6600;
+      color: white;
+      border-radius: 12px;
+      cursor: pointer;
+      margin-top: 30px;
+      box-shadow: 0px 5px 10px rgba(0,0,0,0.2);
+    }
+    #game-area {
+      display: none;
+      margin-top: 30px;
+    }
+    .column {
+      display: inline-block;
+      vertical-align: top;
+      width: 45%;
+      margin: 2%;
+    }
+    canvas {
+      border: 4px solid #ff9933;
+      border-radius: 10px;
+    }
+    #gesture, #temi-choice, #result, #countdown, #scoreboard {
+      font-size: 1.6em;
+      margin-top: 20px;
+      color: #333333;
+      font-weight: bold;
+    }
+    #result {
+      font-size: 2em;
+      margin-top: 30px;
+    }
+    #game-title {
+      background: #ffcc00;
+      padding: 10px;
+      font-size: 1.2em;
+      border-radius: 10px;
+      display: inline-block;
+      margin-bottom: 20px;
+      color: #333;
+      box-shadow: 0px 2px 5px rgba(0,0,0,0.1);
+    }
+  </style>
+</head>
+<body>
+  <div id="game-title">📢 이벤트 참여하고 선물 받자!</div>
+  <h1>🎉 테미와 가위바위보 챌린지</h1>
+  <button id="start-button" onclick="startGame()">게임 START</button>
+
+  <div id="game-area">
+    <div id="countdown">⏳ 준비 중...</div>
+    <div class="column">
+      <h2>🤖 테미</h2>
+      <div id="temi-choice">🎲 대기 중...</div>
+    </div>
+    <div class="column">
+      <h2>🧍‍♂️ 당신</h2>
+      <video id="input_video" style="display:none;"></video>
+      <canvas id="output_canvas" width="640" height="480"></canvas>
+      <div id="gesture">🖐 손 모양 인식 중...</div>
+    </div>
+    <div id="result">🎯 결과: 대기 중...</div>
+    <div id="scoreboard">👤 당신: 0승 / 🤖 테미: 0승</div>
+    <button id="retry-button" onclick="retryGame()" style="display:none;">🔁 다시 도전!</button>
+  </div>
+
+  <script>
+    const videoElement = document.getElementById('input_video');
+    const canvasElement = document.getElementById('output_canvas');
+    const canvasCtx = canvasElement.getContext('2d');
+    const gestureOutput = document.getElementById('gesture');
+    const temiOutput = document.getElementById('temi-choice');
+    const resultOutput = document.getElementById('result');
+    const countdownEl = document.getElementById('countdown');
+    const gameArea = document.getElementById('game-area');
+    const startButton = document.getElementById('start-button');
+    const retryButton = document.getElementById('retry-button');
+    const scoreboard = document.getElementById('scoreboard');
+
+    let userGesture = "unknown";
+    let userScore = 0;
+    let temiScore = 0;
+
+    function classifyGesture(landmarks) {
+      if (!landmarks) return "unknown";
+      const fingerStates = [false, false, false, false, false];
+      const tips = [4, 8, 12, 16, 20];
+
+      for (let i = 1; i < tips.length; i++) {
+        if (landmarks[tips[i]].y < landmarks[tips[i] - 2].y) {
+          fingerStates[i] = true;
+        }
+      }
+
+      const openFingers = fingerStates.filter(Boolean).length;
+      if (openFingers === 0) return "rock";
+      if (openFingers === 2) return "scissors";
+      if (openFingers >= 4) return "paper";
+      return "unknown";
+    }
+
+    function getGestureEmoji(gesture) {
+      switch (gesture) {
+        case "rock": return "✊ 바위";
+        case "paper": return "✋ 보";
+        case "scissors": return "✌️ 가위";
+        default: return "❓ 인식 실패";
+      }
+    }
+
+    function getTemiChoice() {
+      const choices = ["rock", "paper", "scissors"];
+      return choices[Math.floor(Math.random() * 3)];
+    }
+
+    function judgeGame(user, temi) {
+      if (user === temi) return "draw";
+      if (
+        (user === "rock" && temi === "scissors") ||
+        (user === "scissors" && temi === "paper") ||
+        (user === "paper" && temi === "rock")
+      ) return "user";
+      return "temi";
+    }
+
+    function speak(text) {
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.lang = 'ko-KR';
+      window.speechSynthesis.speak(utter);
+    }
+
+    function updateScore(result) {
+      if (result === "user") userScore++;
+      else if (result === "temi") temiScore++;
+      scoreboard.textContent = `👤 당신: ${userScore}승 / 🤖 테미: ${temiScore}승`;
+    }
+
+    function startGame() {
+      startButton.style.display = "none";
+      retryButton.style.display = "none";
+      gameArea.style.display = "block";
+      resultOutput.textContent = "🎯 결과: 대기 중...";
+      countdownEl.textContent = "셋을 세면 시작합니다!";
+      speak("셋을 세면 가위 바위 보를 하는 거예요");
+
+      setTimeout(() => {
+        countdownEl.textContent = "가위!";
+        speak("가위!");
+      }, 2000);
+      setTimeout(() => {
+        countdownEl.textContent = "바위!";
+        speak("바위!");
+      }, 4000);
+      setTimeout(() => {
+        countdownEl.textContent = "보!";
+        speak("보!");
+        const temiChoice = getTemiChoice();
+        const result = judgeGame(userGesture, temiChoice);
+        temiOutput.textContent = getGestureEmoji(temiChoice);
+
+        let resultText = "";
+        if (result === "user") resultText = "🎉 당신이 이겼어요!";
+        else if (result === "temi") resultText = "😢 테미가 이겼어요!";
+        else resultText = "😐 비겼어요!";
+
+        resultOutput.textContent = "🎯 결과: " + resultText;
+        speak(resultText);
+        updateScore(result);
+        retryButton.style.display = "inline-block";
+      }, 6000);
+    }
+
+    function retryGame() {
+      userGesture = "unknown";
+      startGame();
+    }
+
+    function onResults(results) {
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        const landmarks = results.multiHandLandmarks[0];
+        drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
+        drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 1});
+        userGesture = classifyGesture(landmarks);
+        gestureOutput.textContent = "🖐 당신의 손 모양: " + getGestureEmoji(userGesture);
+      } else {
+        gestureOutput.textContent = "🖐 손을 화면에 보여주세요.";
+      }
+
+      canvasCtx.restore();
+    }
+
+    const hands = new Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.5
+    });
+    hands.onResults(onResults);
+
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await hands.send({image: videoElement});
+      },
+      width: 640,
+      height: 480
+    });
+    camera.start();
+  </script>
+</body>
+</html>
