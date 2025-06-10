@@ -1,0 +1,86 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>테미 가위바위보 데모</title>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; background: #f0f8ff; }
+    canvas { border: 1px solid #ccc; margin-top: 20px; }
+    #gesture { font-size: 1.5em; margin-top: 20px; color: #333; }
+  </style>
+</head>
+<body>
+  <h1>🤖 테미와 가위바위보 하기</h1>
+  <video id="input_video" style="display:none;"></video>
+  <canvas id="output_canvas" width="640" height="480"></canvas>
+  <div id="gesture">손 모양을 인식 중...</div>
+  <script>
+    const videoElement = document.getElementById('input_video');
+    const canvasElement = document.getElementById('output_canvas');
+    const canvasCtx = canvasElement.getContext('2d');
+    const gestureOutput = document.getElementById('gesture');
+
+    function classifyGesture(landmarks) {
+      if (!landmarks) return "알 수 없음";
+      const fingerStates = [false, false, false, false, false]; // Thumb to pinky
+      const tips = [4, 8, 12, 16, 20];
+
+      for (let i = 1; i < tips.length; i++) {
+        if (landmarks[tips[i]].y < landmarks[tips[i] - 2].y) {
+          fingerStates[i] = true;
+        }
+      }
+
+      const openFingers = fingerStates.filter(Boolean).length;
+
+      if (openFingers === 0) return "✊ 바위";
+      if (openFingers === 2) return "✌️ 가위";
+      if (openFingers >= 4) return "✋ 보";
+      return "알 수 없음";
+    }
+
+    function onResults(results) {
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+      canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        const landmarks = results.multiHandLandmarks[0];
+        drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS, {color: '#00FF00', lineWidth: 2});
+        drawLandmarks(canvasCtx, landmarks, {color: '#FF0000', lineWidth: 1});
+
+        const gesture = classifyGesture(landmarks);
+        gestureOutput.textContent = "당신의 손 모양: " + gesture;
+      } else {
+        gestureOutput.textContent = "손을 화면에 보여주세요.";
+      }
+
+      canvasCtx.restore();
+    }
+
+    const hands = new Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.5
+    });
+    hands.onResults(onResults);
+
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await hands.send({image: videoElement});
+      },
+      width: 640,
+      height: 480
+    });
+    camera.start();
+  </script>
+</body>
+</html>
